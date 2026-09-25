@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Http\Controllers;
 
 use App\Models\Complaint;
@@ -6,13 +7,27 @@ use Illuminate\Http\Request;
 
 class ComplaintController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
+        $query = Complaint::with('user')->latest();
+
+        // Jika admin memilih filter status
         if (auth()->user()->role === 'admin') {
-            $complaints = Complaint::with('user')->latest()->paginate(10);
+            if ($request->filled('status')) {
+                $query->where('status', $request->status);
+            }
         } else {
-            $complaints = Complaint::where('user_id', auth()->id())->latest()->paginate(10);
+            // Masyarakat hanya bisa melihat pengaduannya sendiri
+            $query->where('user_id', auth()->id());
+
+            // Jika ada filter status untuk masyarakat
+            if ($request->filled('status')) {
+                $query->where('status', $request->status);
+            }
         }
+
+        $complaints = $query->paginate(10)->withQueryString();
+
         return view('complaints.index', compact('complaints'));
     }
 
@@ -23,20 +38,37 @@ class ComplaintController extends Controller
 
     public function show(Complaint $complaint)
     {
-        if (auth()->user()->role !== 'admin' && $complaint->user_id !== auth()->id()) {
+        if (
+            auth()->user()->role !== 'admin' &&
+            $complaint->user_id !== auth()->id()
+        ) {
             abort(403, 'Akses ditolak.');
         }
+
         return view('complaints.show', compact('complaint'));
     }
 
     public function edit(Complaint $complaint)
     {
-        if (auth()->user()->role !== 'admin' && $complaint->user_id !== auth()->id()) {
+        if (
+            auth()->user()->role !== 'admin' &&
+            $complaint->user_id !== auth()->id()
+        ) {
             abort(403, 'Akses ditolak.');
         }
-        if (auth()->user()->role !== 'admin' && $complaint->status !== 'pending') {
-            return redirect()->back()->with('error', 'Pengaduan tidak dapat diedit karena sudah diproses.');
+
+        if (
+            auth()->user()->role !== 'admin' &&
+            $complaint->status !== 'pending'
+        ) {
+            return redirect()
+                ->back()
+                ->with(
+                    'error',
+                    'Pengaduan tidak dapat diedit karena sudah diproses.'
+                );
         }
+
         return view('complaints.edit', compact('complaint'));
     }
 
@@ -50,14 +82,32 @@ class ComplaintController extends Controller
 
         $photo = null;
 
-        if ($request->photo_type === 'kamera' && $request->photo_base64) {
+        if (
+            $request->photo_type === 'kamera' &&
+            $request->photo_base64
+        ) {
             $imageData = $request->photo_base64;
-            $imageData = str_replace('data:image/jpeg;base64,', '', $imageData);
+
+            $imageData = str_replace(
+                'data:image/jpeg;base64,',
+                '',
+                $imageData
+            );
+
             $imageData = base64_decode($imageData);
+
             $filename = 'complaints/' . uniqid() . '.jpg';
-            \Storage::disk('public')->put($filename, $imageData);
+
+            \Storage::disk('public')->put(
+                $filename,
+                $imageData
+            );
+
             $photo = $filename;
-        } elseif ($request->photo_type === 'link' && $request->photo_url) {
+        } elseif (
+            $request->photo_type === 'link' &&
+            $request->photo_url
+        ) {
             $photo = $request->photo_url;
         }
 
@@ -70,39 +120,67 @@ class ComplaintController extends Controller
             'status' => 'pending',
         ]);
 
-        return redirect()->route('complaints.index')->with('success', 'Pengaduan berhasil dikirim!');
+        return redirect()
+            ->route('complaints.index')
+            ->with('success', 'Pengaduan berhasil dikirim!');
     }
 
-    public function update(Request $request, Complaint $complaint)
-    {
-        if (auth()->user()->role !== 'admin' && $complaint->user_id !== auth()->id()) {
+    public function update(
+        Request $request,
+        Complaint $complaint
+    ) {
+        if (
+            auth()->user()->role !== 'admin' &&
+            $complaint->user_id !== auth()->id()
+        ) {
             abort(403, 'Akses ditolak.');
         }
+
         $request->validate([
             'title' => 'required|string|max:255',
             'description' => 'required|string',
             'location' => 'required|string|max:255',
         ]);
-        $complaint->update($request->only(['title', 'description', 'location']));
-        return redirect()->route('complaints.index')->with('success', 'Pengaduan berhasil diupdate!');
+
+        $complaint->update(
+            $request->only([
+                'title',
+                'description',
+                'location'
+            ])
+        );
+
+        return redirect()
+            ->route('complaints.index')
+            ->with('success', 'Pengaduan berhasil diupdate!');
     }
 
     public function destroy(Complaint $complaint)
     {
-        if (auth()->user()->role !== 'admin' && $complaint->user_id !== auth()->id()) {
+        if (
+            auth()->user()->role !== 'admin' &&
+            $complaint->user_id !== auth()->id()
+        ) {
             abort(403, 'Akses ditolak.');
         }
+
         $complaint->delete();
-        return redirect()->route('complaints.index')->with('success', 'Pengaduan berhasil dihapus!');
+
+        return redirect()
+            ->back()
+            ->with('success', 'Pengaduan berhasil dihapus!');
     }
 
     public function responMasuk()
     {
         $complaints = Complaint::with('user')
-                        ->where('status', 'pending')
-                        ->latest()
-                        ->paginate(10);
+            ->where('status', 'pending')
+            ->latest()
+            ->paginate(10);
 
-        return view('complaints.index', compact('complaints'));
+        return view(
+            'complaints.index',
+            compact('complaints')
+        );
     }
 }
